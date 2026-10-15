@@ -4,11 +4,13 @@ Query Executor
 Executes validated SQL in a read-only transaction.
 Returns results as columns + rows with execution metadata.
 """
+
 import time
 from decimal import Decimal
 from sqlalchemy import text
 from app.core.database import readonly_session
 from app.config import settings
+from app.services.guardrails import check_guardrails, is_blocked, inject_limit
 import structlog
 
 log = structlog.get_logger()
@@ -34,7 +36,11 @@ class ExecutionResult:
 
 def execute_query(sql: str, max_rows: int = None) -> ExecutionResult:
     """Execute SQL and return structured results."""
-    limit = max_rows or settings.max_rows
+    limit = min(max_rows or settings.max_rows, settings.max_rows)
+    violations = check_guardrails(sql)
+    if is_blocked(violations):
+        raise ValueError("SQL rejected by execution guardrails")
+    sql = inject_limit(sql, limit)
 
     # Get explain plan first (for audit / row estimate)
     explain_plan = None
@@ -50,7 +56,7 @@ def execute_query(sql: str, max_rows: int = None) -> ExecutionResult:
         start = time.perf_counter()
 
         result = conn.execute(text(sql))
-        all_rows = result.fetchall()
+        all_rows = result.fetchmany(limit)
 
         elapsed_ms = (time.perf_counter() - start) * 1000
 

@@ -4,9 +4,9 @@ SQL Generator
 Translates natural language questions to SQL using a schema-aware prompt.
 Returns structured output with SQL, explanation, confidence, and tables used.
 """
+
 from app.services.llm_client import complete, parse_json_response
-from app.services.schema_extractor import schema_to_prompt_context, get_schema
-from app.models.schemas import ClarificationOption
+from app.models.schemas import GeneratedQuery
 import structlog
 
 log = structlog.get_logger()
@@ -87,9 +87,9 @@ A:"""
     )
 
     try:
-        result = parse_json_response(raw)
+        result = GeneratedQuery.model_validate(parse_json_response(raw)).model_dump()
     except Exception as e:
-        log.error("sql_parse_error", error=str(e), raw=raw[:300])
+        log.error("sql_parse_error", error_type=type(e).__name__)
         return {
             "sql": None,
             "explanation": None,
@@ -97,7 +97,7 @@ A:"""
             "confidence": 0.0,
             "needs_clarification": False,
             "clarification_options": [],
-            "error": f"Failed to parse LLM response: {e}",
+            "error": "The model returned an invalid response. Try a more specific question.",
         }
 
     return result
@@ -124,6 +124,6 @@ A:"""
     )
 
     try:
-        return parse_json_response(raw)
+        return GeneratedQuery.model_validate(parse_json_response(raw)).model_dump()
     except Exception:
         return {"sql": None, "error": "Could not generate alternative SQL"}

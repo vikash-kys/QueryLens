@@ -2,6 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 from app.api.routes import router
+from app.config import settings
+from app.core.database import readonly_engine, schema_engine
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    readonly_engine.dispose()
+    schema_engine.dispose()
+
 
 # Configure structured logging
 structlog.configure(
@@ -13,6 +24,7 @@ structlog.configure(
 )
 
 app = FastAPI(
+    lifespan=lifespan,
     title="Text-to-SQL API",
     description="Natural language to SQL with guardrails and hallucination detection",
     version="1.0.0",
@@ -22,10 +34,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(router, prefix="/v1")

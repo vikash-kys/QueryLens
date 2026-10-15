@@ -19,8 +19,11 @@ build/
 
 # Environment
 .env
-*.env.local
-*.env.*.local
+.env.*
+*.env
+*.env.*
+!.env.example
+!env.example
 
 # Node
 frontend/node_modules/
@@ -44,3 +47,26 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local verification artifacts and database backups
+artifacts/local-backups/
+.local/
+frontend/test-results/
+frontend/playwright-report/
+
+# Local project notes and retired showcase content
+AUDIT_PROGRESS.md
+INTERVIEW_GUIDE.md
+showcase/
+backend/showcase.py
+
+# Keep the public gallery curated; capture scripts may create more images/data.
+artifacts/screenshots/*
+!artifacts/screenshots/README.md
+!artifacts/screenshots/ai-query-desktop.png
+!artifacts/screenshots/home-desktop.png
+!artifacts/screenshots/query-desktop.png
+!artifacts/screenshots/schema-desktop.png
+!artifacts/screenshots/history-desktop.png
+!artifacts/screenshots/blocked-desktop.png
+!artifacts/screenshots/evaluations-desktop.png

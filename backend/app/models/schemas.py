@@ -1,13 +1,13 @@
-from pydantic import BaseModel, Field
-from typing import Optional, Any
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+from typing import Optional, Any, Literal
 from datetime import datetime, timezone
-from enum import Enum
 
 
 class QueryRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     question: str = Field(..., min_length=3, max_length=2000)
-    session_id: Optional[str] = None
-    clarification_choice: Optional[str] = None  # when resolving ambiguity
+    clarification_choice: Optional[str] = Field(None, max_length=500)
+    mode: Literal["natural_language", "sql"] = "natural_language"
 
 
 class GuardrailViolation(BaseModel):
@@ -22,6 +22,7 @@ class ConfidenceBreakdown(BaseModel):
     result_sanity: float
     schema_coverage: float
     overall: float
+    multi_query_agreement: Optional[float] = None
 
 
 class ClarificationOption(BaseModel):
@@ -54,7 +55,24 @@ class QueryResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     query_id: str
     is_correct: bool
-    comment: Optional[str] = None
+    comment: Optional[str] = Field(None, max_length=2000)
+
+
+class GeneratedQuery(BaseModel):
+    sql: Optional[str] = Field(None, max_length=20000)
+    explanation: Optional[str] = Field(None, max_length=4000)
+    tables_used: list[str] = Field(default_factory=list, max_length=100)
+    confidence: float = Field(ge=0, le=1)
+    needs_clarification: bool = False
+    clarification_options: list[ClarificationOption] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def require_output(self):
+        if self.needs_clarification and not self.clarification_options:
+            raise ValueError("Clarification requires options")
+        if not self.needs_clarification and not self.sql:
+            raise ValueError("SQL is required")
+        return self
 
 
 class ColumnInfo(BaseModel):
@@ -91,9 +109,8 @@ class HistoryItem(BaseModel):
 
 class EvalResult(BaseModel):
     total_cases: int
-    sql_accuracy: float
-    execution_accuracy: float
-    hallucination_detection_rate: float
+    shape_pass_rate: float
+    flagged_case_rate: float
     guardrail_effectiveness: float
     average_confidence: float
     details: list[dict]

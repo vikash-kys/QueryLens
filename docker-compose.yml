@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pgdata18:/var/lib/postgresql  # PG18+ image keeps data in a versioned subdir
@@ -21,34 +21,41 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql://readonly:readonly@postgres:5432/analytics
-      ADMIN_DATABASE_URL: postgresql://admin:password@postgres:5432/analytics
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_MODEL_ANTHROPIC: ${LLM_MODEL_ANTHROPIC:-}
+      LLM_MODEL_OPENAI: ${LLM_MODEL_OPENAI:-}
+      LLM_MODEL_GEMINI: ${LLM_MODEL_GEMINI:-}
+      GEMINI_REASONING_EFFORT: ${GEMINI_REASONING_EFFORT:-low}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-4096}
+      ENABLE_AI_REVIEW: ${ENABLE_AI_REVIEW:-true}
+      MAX_ROWS: ${MAX_ROWS:-1000}
+      MAX_SUBQUERY_DEPTH: ${MAX_SUBQUERY_DEPTH:-3}
+      QUERY_TIMEOUT_SECONDS: ${QUERY_TIMEOUT_SECONDS:-30}
+      MIN_CONFIDENCE_TO_EXECUTE: ${MIN_CONFIDENCE_TO_EXECUTE:-0.3}
+      HALLUCINATION_FLAG_THRESHOLD: ${HALLUCINATION_FLAG_THRESHOLD:-0.5}
+      HISTORY_LIMIT: ${HISTORY_LIMIT:-100}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
+      ENABLE_LIVE_EVALS: ${ENABLE_LIVE_EVALS:-false}
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    environment:
-      VITE_API_URL: http://backend:8000
+      - "127.0.0.1:3000:3000"
     depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata18:

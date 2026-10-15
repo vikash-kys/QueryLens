@@ -106,6 +106,8 @@ COMMENT ON TABLE marketing_campaigns IS 'Marketing campaigns with performance me
 -- SEED DATA
 -- ============================================================
 
+SELECT setseed(0.42);
+
 INSERT INTO customers (email, full_name, country, city, age, segment, joined_at, is_active) VALUES
 ('alice.chen@acme.com','Alice Chen','USA','San Francisco',34,'Enterprise','2022-01-15',true),
 ('bob.smith@gmail.com','Bob Smith','USA','New York',28,'Consumer','2022-03-22',true),
@@ -230,8 +232,10 @@ SELECT
     SUM(oi.quantity * (oi.unit_price - p.cost_price)) AS gross_profit,
     ROUND(100.0 * SUM(oi.quantity * (oi.unit_price - p.cost_price)) / NULLIF(SUM(oi.quantity * oi.unit_price),0), 2) AS margin_pct
 FROM products p
-LEFT JOIN order_items oi ON oi.product_id = p.product_id
-LEFT JOIN orders o ON o.order_id = oi.order_id AND o.status NOT IN ('cancelled','refunded')
+LEFT JOIN (
+    order_items oi JOIN orders o
+      ON o.order_id = oi.order_id AND o.status NOT IN ('cancelled','refunded')
+) ON oi.product_id = p.product_id
 GROUP BY 1,2,3,4;
 
 COMMENT ON VIEW revenue_by_month IS 'Monthly gross revenue, order counts, and unique customers. Excludes cancelled/refunded orders.';

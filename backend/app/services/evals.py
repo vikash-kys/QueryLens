@@ -1,11 +1,10 @@
 """
 Automated Evaluation Suite
 ===========================
-50 golden question → SQL pairs. Measures:
-- Execution accuracy (results match expected)
-- Hallucination detection rate
-- Guardrail effectiveness
+Shape-based smoke cases, not semantic accuracy or hallucination recall.
+Failures count in the denominator. Live runs incur model-provider usage.
 """
+
 from app.services.orchestrator import process_query
 from app.models.schemas import QueryRequest, EvalResult
 import structlog
@@ -219,25 +218,30 @@ def run_evals() -> EvalResult:
 
     for case in GOLDEN_CASES:
         question = case["question"]
-        should_block = case.get("should_block", False)
         is_guardrail = case.get("is_guardrail_test", False)
+
+        if is_guardrail:
+            guardrail_total += 1
+        else:
+            execution_total += 1
 
         try:
             resp = process_query(QueryRequest(question=question))
         except Exception as e:
-            results.append({
-                "question": question,
-                "status": "exception",
-                "error": str(e),
-                "passed": False,
-            })
+            results.append(
+                {
+                    "question": question,
+                    "status": "exception",
+                    "error": type(e).__name__,
+                    "passed": False,
+                }
+            )
             continue
 
         passed = False
         notes = []
 
         if is_guardrail:
-            guardrail_total += 1
             if resp.status == "blocked":
                 guardrail_correct += 1
                 passed = True
@@ -246,15 +250,10 @@ def run_evals() -> EvalResult:
                 notes.append(f"✗ Should have been blocked, got status={resp.status}")
 
         elif resp.status == "success":
-            execution_total += 1
-
             # Check columns overlap
             expected_cols = case.get("expected_columns", [])
             col_names = [c.lower() for c in resp.columns]
-            col_match = all(
-                any(exp in col for col in col_names)
-                for exp in expected_cols
-            )
+            col_match = all(any(exp in col for col in col_names) for exp in expected_cols)
 
             # Check row counts
             exact_rows = case.get("expect_rows")
@@ -287,14 +286,16 @@ def run_evals() -> EvalResult:
         else:
             notes.append(f"Query status: {resp.status} — {resp.error_message}")
 
-        results.append({
-            "question": question,
-            "status": resp.status,
-            "passed": passed,
-            "notes": notes,
-            "confidence": resp.confidence.overall if resp.confidence else None,
-            "sql": resp.sql,
-        })
+        results.append(
+            {
+                "question": question,
+                "status": resp.status,
+                "passed": passed,
+                "notes": notes,
+                "confidence": resp.confidence.overall if resp.confidence else None,
+                "sql": resp.sql,
+            }
+        )
 
     total = len(GOLDEN_CASES)
     guardrail_eff = guardrail_correct / max(guardrail_total, 1)
@@ -310,9 +311,8 @@ def run_evals() -> EvalResult:
 
     return EvalResult(
         total_cases=total,
-        sql_accuracy=round(exec_acc, 3),
-        execution_accuracy=round(exec_acc, 3),
-        hallucination_detection_rate=round(hallucination_flagged / max(execution_total, 1), 3),
+        shape_pass_rate=round(exec_acc, 3),
+        flagged_case_rate=round(hallucination_flagged / max(execution_total, 1), 3),
         guardrail_effectiveness=round(guardrail_eff, 3),
         average_confidence=round(avg_confidence, 3),
         details=results,

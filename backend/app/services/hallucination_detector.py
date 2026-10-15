@@ -9,13 +9,26 @@ Signals:
 3. Multi-query validation      — do two independent approaches agree?
 4. Schema coverage             — did the query use expected tables?
 """
-import re
+
+from collections import Counter
+from pydantic import BaseModel, Field
 from app.services.llm_client import complete, parse_json_response
 from app.models.schemas import ConfidenceBreakdown
 from app.services.executor import ExecutionResult
 import structlog
 
 log = structlog.get_logger()
+
+
+class Alignment(BaseModel):
+    alignment_score: float = Field(ge=0, le=1)
+    issues: list[str] = []
+
+
+class Sanity(BaseModel):
+    score: float = Field(ge=0, le=1)
+    flags: list[str] = []
+
 
 _BACK_TRANSLATE_SYSTEM = """You are an expert SQL analyst.
 Given a SQL query, describe in ONE sentence what question it answers.
@@ -80,10 +93,11 @@ def score_alignment(original_question: str, back_translated: str) -> tuple[float
             user=f"Original question: {original_question}\nSQL interprets as: {back_translated}",
         )
         result = parse_json_response(raw)
-        return result.get("alignment_score", 0.5), result.get("issues", [])
+        validated = Alignment.model_validate(result)
+        return validated.alignment_score, validated.issues
     except Exception as e:
         log.error("alignment_score_error", error=str(e))
-        return 0.5, [f"Alignment check failed: {e}"]
+        return 0.0, ["Alignment check unavailable; review the SQL manually."]
 
 
 def check_result_sanity(
@@ -110,9 +124,11 @@ def check_result_sanity(
                 score -= 0.1
 
     # Numeric plausibility for revenue-type columns
-    revenue_cols = [c for c in result.columns if any(
-        kw in c.lower() for kw in ["revenue", "amount", "total", "price", "profit"]
-    )]
+    revenue_cols = [
+        c
+        for c in result.columns
+        if any(kw in c.lower() for kw in ["revenue", "amount", "total", "price", "profit"])
+    ]
     for col_name in revenue_cols:
         col_idx = result.columns.index(col_name)
         values = [row[col_idx] for row in result.rows if row[col_idx] is not None]
@@ -131,19 +147,24 @@ def check_result_sanity(
     # LLM-based sanity check for complex cases
     if result.row_count > 0:
         sample_rows = result.rows[:5]
-        result_summary = f"Columns: {result.columns}\nFirst rows: {sample_rows}\nTotal rows: {result.total_rows_available}"
+        result_summary = (
+            f"Columns: {result.columns}\nFirst rows: {sample_rows}\nTotal rows: {result.total_rows_available}"
+        )
         try:
             raw = complete(
                 system=_SANITY_SYSTEM,
                 user=f"Question: {question}\nSQL: {sql}\nResults: {result_summary}",
             )
             sanity = parse_json_response(raw)
-            llm_score = sanity.get("score", 1.0)
-            llm_flags = sanity.get("flags", [])
+            validated = Sanity.model_validate(sanity)
+            llm_score = validated.score
+            llm_flags = validated.flags
             score = (score + llm_score) / 2
             flags.extend(llm_flags)
         except Exception as e:
-            log.warning("llm_sanity_check_failed", error=str(e))
+            log.warning("llm_sanity_check_failed", error_type=type(e).__name__)
+            flags.append("Model-based result sanity check unavailable; only local heuristics ran.")
+            score = min(score, 0.5)
 
     return max(0.0, min(1.0, score)), flags
 
@@ -157,35 +178,16 @@ def validate_multi_query(
     Returns agreement score (0-1) and explanation.
     """
     if result_b is None:
-        return 0.5, "Could not generate alternative query"
-
+        return 0.0, "Alternative query unavailable"
     if result_a.columns != result_b.columns:
-        return 0.3, f"Queries returned different columns: {result_a.columns} vs {result_b.columns}"
-
-    if result_a.total_rows_available != result_b.total_rows_available:
-        diff = abs(result_a.total_rows_available - result_b.total_rows_available)
-        pct_diff = diff / max(result_a.total_rows_available, 1)
-        if pct_diff < 0.01:
-            return 0.95, f"Row counts nearly identical ({result_a.total_rows_available} vs {result_b.total_rows_available})"
-        elif pct_diff < 0.05:
-            return 0.8, f"Small row count discrepancy: {result_a.total_rows_available} vs {result_b.total_rows_available}"
-        else:
-            return 0.4, f"Significant row count discrepancy: {result_a.total_rows_available} vs {result_b.total_rows_available}"
-
-    # Compare first row numeric values
-    if result_a.rows and result_b.rows:
-        row_a = result_a.rows[0]
-        row_b = result_b.rows[0]
-        try:
-            for va, vb in zip(row_a, row_b):
-                if va is not None and vb is not None:
-                    fa, fb = float(va), float(vb)
-                    if abs(fa - fb) / max(abs(fa), 1) > 0.01:
-                        return 0.5, f"First row values differ: {va} vs {vb}"
-        except (ValueError, TypeError):
-            pass
-
-    return 0.95, "Both approaches agree on results"
+        return 0.0, "Column names differ; agreement cannot be established"
+    # Compare every returned row, preserving duplicate multiplicity and ignoring order.
+    # Capped results can only establish agreement on the returned sample.
+    rows_a = Counter(tuple(row) for row in result_a.rows)
+    rows_b = Counter(tuple(row) for row in result_b.rows)
+    if rows_a != rows_b:
+        return 0.0, "Returned row values differ"
+    return 1.0, "Returned rows agree (not a proof of semantic correctness)"
 
 
 def compute_confidence(
@@ -193,7 +195,7 @@ def compute_confidence(
     alignment_score: float,
     sanity_score: float,
     schema_coverage: float,
-    multi_query_agreement: float,
+    multi_query_agreement: float | None,
 ) -> ConfidenceBreakdown:
     """Weighted combination of all confidence signals."""
     weights = {
@@ -213,7 +215,10 @@ def compute_confidence(
         "multi_query_agreement": multi_query_agreement,
     }
 
-    overall = sum(scores[k] * weights[k] for k in weights)
+    measured = {k: v for k, v in scores.items() if v is not None}
+    overall = sum(max(0.0, min(1.0, v)) * weights[k] for k, v in measured.items()) / sum(
+        weights[k] for k in measured
+    )
 
     return ConfidenceBreakdown(
         syntax_valid=round(scores["syntax_valid"], 3),
@@ -221,6 +226,7 @@ def compute_confidence(
         result_sanity=round(sanity_score, 3),
         schema_coverage=round(schema_coverage, 3),
         overall=round(overall, 3),
+        multi_query_agreement=multi_query_agreement,
     )
 
 
