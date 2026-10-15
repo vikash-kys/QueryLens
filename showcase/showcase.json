@@ -1,0 +1,294 @@
+{
+  "provider": "gemini",
+  "model": "gemini-3.6-flash",
+  "generated_at": "2026-10-05T08:59:53+00:00",
+  "entries": [
+    {
+      "category": "Time series",
+      "seconds": 11.5,
+      "response": {
+        "query_id": "6141ffcc-bec1-4e15-adca-3b7cc58fdefb",
+        "question": "Show monthly revenue over the last 12 months",
+        "sql": "SELECT DATE_TRUNC('month', o.created_at) AS month, SUM(oi.quantity * oi.unit_price * (1 - COALESCE(oi.discount_pct, 0) / 100)) AS revenue FROM orders o JOIN order_items oi ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'refunded') AND o.created_at >= NOW() - INTERVAL '12 months' GROUP BY 1 ORDER BY 1",
+        "explanation": "Calculates monthly revenue from valid (non-cancelled, non-refunded) orders created within the last 12 months using DATE_TRUNC.",
+        "columns": [
+          "month",
+          "revenue"
+        ],
+        "rows": [
+          [
+            "2025-10-01T00:00:00",
+            784.038703
+          ],
+          [
+            "2025-11-01T00:00:00",
+            2128.981059
+          ],
+          [
+            "2025-12-01T00:00:00",
+            1900.434748
+          ],
+          [
+            "2026-01-01T00:00:00",
+            2742.550024
+          ],
+          [
+            "2026-02-01T00:00:00",
+            2257.250977
+          ],
+          [
+            "2026-03-01T00:00:00",
+            2739.676199
+          ],
+          [
+            "2026-04-01T00:00:00",
+            1327.788794
+          ],
+          [
+            "2026-05-01T00:00:00",
+            2324.491884
+          ],
+          [
+            "2026-06-01T00:00:00",
+            2375.754002
+          ],
+          [
+            "2026-07-01T00:00:00",
+            2519.972863
+          ],
+          [
+            "2026-08-01T00:00:00",
+            3764.995295
+          ],
+          [
+            "2026-09-01T00:00:00",
+            2094.117354
+          ],
+          [
+            "2026-10-01T00:00:00",
+            373.569322
+          ]
+        ],
+        "row_count": 13,
+        "total_rows_available": 13,
+        "execution_time_ms": 16.42,
+        "confidence": {
+          "syntax_valid": 1.0,
+          "back_translation_alignment": 1.0,
+          "result_sanity": 0.975,
+          "schema_coverage": 1.0,
+          "overall": 0.979
+        },
+        "guardrail_violations": [
+          {
+            "rule": "NO_LIMIT",
+            "detail": "Query has no LIMIT clause. A LIMIT of 1000 will be auto-applied.",
+            "severity": "warn"
+          }
+        ],
+        "hallucination_flags": [],
+        "back_translation": "What is the monthly total revenue\u2014calculated by summing the discounted order item totals from the orders and order_items tables\u2014for non-cancelled and non-refunded orders over the past 12 months?",
+        "tables_used": [
+          "orders",
+          "order_items"
+        ],
+        "status": "success",
+        "error_message": null,
+        "clarification_options": [],
+        "timestamp": "2026-10-05T08:58:14.454131Z"
+      }
+    },
+    {
+      "category": "Margin math",
+      "seconds": 19.0,
+      "response": {
+        "query_id": "ab15dc5a-e09c-4fd2-8130-59507b4996c8",
+        "question": "What is the gross margin percentage for each product category?",
+        "sql": null,
+        "explanation": null,
+        "columns": [],
+        "rows": [],
+        "row_count": 0,
+        "total_rows_available": 0,
+        "execution_time_ms": null,
+        "confidence": null,
+        "guardrail_violations": [],
+        "hallucination_flags": [],
+        "back_translation": null,
+        "tables_used": [],
+        "status": "error",
+        "error_message": "SQL generation failed: Error code: 503 - [{'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}]",
+        "clarification_options": [],
+        "timestamp": "2026-10-05T08:59:53.874082Z"
+      }
+    },
+    {
+      "category": "Window function",
+      "seconds": 92.9,
+      "response": {
+        "query_id": "4b6feb07-e81b-4da4-9124-30353b073e01",
+        "question": "For each category, which product sold the most units?",
+        "sql": "WITH product_sales AS (\n    SELECT \n        p.category,\n        p.product_id,\n        p.name AS product_name,\n        SUM(oi.quantity) AS total_units_sold,\n        ROW_NUMBER() OVER (PARTITION BY p.category ORDER BY SUM(oi.quantity) DESC) AS rank\n    FROM products p\n    JOIN order_items oi ON oi.product_id = p.product_id\n    JOIN orders o ON o.order_id = oi.order_id\n    WHERE o.status NOT IN ('cancelled', 'refunded')\n    GROUP BY p.category, p.product_id, p.name\n)\nSELECT \n    category,\n    product_id,\n    product_name,\n    total_units_sold\nFROM product_sales\nWHERE rank = 1\nORDER BY category;",
+        "explanation": "Calculates total units sold per product (excluding cancelled and refunded orders) and uses ROW_NUMBER() partitioned by category to find the top-selling product in each category.",
+        "columns": [
+          "category",
+          "product_id",
+          "product_name",
+          "total_units_sold"
+        ],
+        "rows": [
+          [
+            "Accessories",
+            15,
+            "TechPack Pro Backpack",
+            203
+          ],
+          [
+            "Electronics",
+            19,
+            "SpeedDrive 1TB SSD",
+            278
+          ],
+          [
+            "Office",
+            11,
+            "ErgoDesk Monitor Stand",
+            224
+          ],
+          [
+            "Stationery",
+            13,
+            "Premium A5 Notebook",
+            212
+          ]
+        ],
+        "row_count": 4,
+        "total_rows_available": 4,
+        "execution_time_ms": 16.38,
+        "confidence": {
+          "syntax_valid": 1.0,
+          "back_translation_alignment": 1.0,
+          "result_sanity": 1.0,
+          "schema_coverage": 1.0,
+          "overall": 0.985
+        },
+        "guardrail_violations": [
+          {
+            "rule": "NO_LIMIT",
+            "detail": "Query has no LIMIT clause. A LIMIT of 1000 will be auto-applied.",
+            "severity": "warn"
+          }
+        ],
+        "hallucination_flags": [],
+        "back_translation": "What is the top-selling product by total units sold in each category, excluding orders with a status of 'cancelled' or 'refunded', based on the products, order_items, and orders tables?",
+        "tables_used": [
+          "products",
+          "order_items",
+          "orders"
+        ],
+        "status": "success",
+        "error_message": null,
+        "clarification_options": [],
+        "timestamp": "2026-10-05T08:58:02.977056Z"
+      }
+    },
+    {
+      "category": "Ambiguity",
+      "seconds": 19.9,
+      "response": {
+        "query_id": "72f79f85-6592-4290-a5ad-778872cfc74c",
+        "question": "Who are our best customers?",
+        "sql": null,
+        "explanation": null,
+        "columns": [],
+        "rows": [],
+        "row_count": 0,
+        "total_rows_available": 0,
+        "execution_time_ms": null,
+        "confidence": null,
+        "guardrail_violations": [],
+        "hallucination_flags": [],
+        "back_translation": null,
+        "tables_used": [],
+        "status": "clarification_needed",
+        "error_message": null,
+        "clarification_options": [
+          {
+            "label": "Top customers by total spend",
+            "description": "Ranks customers by total revenue generated from non-cancelled/refunded orders",
+            "example_sql": "SELECT c.customer_id, c.full_name, c.email, SUM(oi.quantity * oi.unit_price) AS total_spent FROM customers c JOIN orders o ON o.customer_id = c.customer_id JOIN order_items oi ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'refunded') GROUP BY c.customer_id, c.full_name, c.email ORDER BY total_spent DESC LIMIT 10"
+          },
+          {
+            "label": "Top customers by order count",
+            "description": "Ranks customers by the total number of orders placed",
+            "example_sql": "SELECT c.customer_id, c.full_name, c.email, COUNT(o.order_id) AS total_orders FROM customers c JOIN orders o ON o.customer_id = c.customer_id WHERE o.status NOT IN ('cancelled', 'refunded') GROUP BY c.customer_id, c.full_name, c.email ORDER BY total_orders DESC LIMIT 10"
+          }
+        ],
+        "timestamp": "2026-10-05T08:58:34.380252Z"
+      }
+    },
+    {
+      "category": "Raw DDL",
+      "seconds": 12.9,
+      "response": {
+        "query_id": "ae11905d-aaf4-4335-a848-7f3d1ad8e5fc",
+        "question": "DROP TABLE orders",
+        "sql": null,
+        "explanation": null,
+        "columns": [],
+        "rows": [],
+        "row_count": 0,
+        "total_rows_available": 0,
+        "execution_time_ms": null,
+        "confidence": null,
+        "guardrail_violations": [],
+        "hallucination_flags": [],
+        "back_translation": null,
+        "tables_used": [],
+        "status": "error",
+        "error_message": "No SQL generated",
+        "clarification_options": [],
+        "timestamp": "2026-10-05T08:58:47.278231Z"
+      }
+    }
+  ],
+  "guardrail_attacks": [
+    {
+      "name": "Write",
+      "sql": "DELETE FROM customers WHERE is_active = false",
+      "rules": [
+        "NO_WRITE_DML"
+      ]
+    },
+    {
+      "name": "Stacked query",
+      "sql": "SELECT * FROM products; DROP TABLE orders",
+      "rules": [
+        "DANGEROUS_PATTERN",
+        "NO_DDL"
+      ]
+    },
+    {
+      "name": "System catalog",
+      "sql": "SELECT usename, passwd FROM pg_shadow",
+      "rules": [
+        "SYSTEM_TABLE_ACCESS"
+      ]
+    },
+    {
+      "name": "DoS",
+      "sql": "SELECT pg_sleep(600)",
+      "rules": [
+        "DANGEROUS_PATTERN"
+      ]
+    },
+    {
+      "name": "Filesystem",
+      "sql": "COPY customers TO '/tmp/customers.csv'",
+      "rules": [
+        "DANGEROUS_PATTERN"
+      ]
+    }
+  ],
+  "sandbox_write_attempt": "cannot execute DELETE in a read-only transaction"
+}
